@@ -86,7 +86,7 @@ resource "aws_iam_role_policy" "lambda_app" {
         # createDraft provisions each draft's own roster table on the fly.
         Effect   = "Allow"
         Action   = ["dynamodb:CreateTable"]
-        Resource = "arn:aws:dynamodb:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:table/megadraft-*-rosters"
+        Resource = "arn:aws:dynamodb:${data.aws_region.current.region}:${data.aws_caller_identity.current.account_id}:table/megadraft-*-rosters"
       },
       {
         # joinDraft/updateDraft broadcast draftUpdated into any WS clients
@@ -122,7 +122,7 @@ resource "aws_lambda_function" "handler" {
 
   function_name    = "fantasy-draft-rest-${each.key}-${var.env}"
   role             = aws_iam_role.lambda_exec.arn
-  runtime          = "nodejs20.x"
+  runtime          = "nodejs24.x"
   handler          = "${each.key}.handler"
   filename         = data.archive_file.handler[each.key].output_path
   source_code_hash = data.archive_file.handler[each.key].output_base64sha256

@@ -35,7 +35,7 @@ locals {
   # reference its own computed attribute from within itself (that's a
   # dependency cycle Terraform will reject). This sidesteps it since a
   # Lambda ARN is fully deterministic from account + region + function name.
-  pick_timeout_arn = "arn:aws:lambda:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:function:${local.pick_timeout_function_name}"
+  pick_timeout_arn = "arn:aws:lambda:${data.aws_region.current.region}:${data.aws_caller_identity.current.account_id}:function:${local.pick_timeout_function_name}"
 
   common_env = {
     CONNECTIONS_TABLE             = var.connections_table_name
@@ -43,7 +43,7 @@ locals {
     PLAYERS_TABLE                 = var.players_table_name
     DRAFT_PICKS_TABLE             = var.draft_picks_table_name
     GOOGLE_CLIENT_ID              = var.google_client_id
-    WEBSOCKET_MANAGEMENT_ENDPOINT = "https://${aws_apigatewayv2_api.this.id}.execute-api.${data.aws_region.current.name}.amazonaws.com/${aws_apigatewayv2_stage.this.name}"
+    WEBSOCKET_MANAGEMENT_ENDPOINT = "https://${aws_apigatewayv2_api.this.id}.execute-api.${data.aws_region.current.region}.amazonaws.com/${aws_apigatewayv2_stage.this.name}"
     SCHEDULER_ROLE_ARN            = aws_iam_role.scheduler_invoke.arn
     PICK_TIMEOUT_FUNCTION_ARN     = local.pick_timeout_arn
   }
@@ -104,7 +104,7 @@ resource "aws_iam_role_policy" "lambda_app" {
         # draft-creation time (see modules/rest-api's createDraft handler).
         Effect   = "Allow"
         Action   = ["dynamodb:PutItem"]
-        Resource = "arn:aws:dynamodb:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:table/megadraft-*-rosters"
+        Resource = "arn:aws:dynamodb:${data.aws_region.current.region}:${data.aws_caller_identity.current.account_id}:table/megadraft-*-rosters"
       },
       {
         Effect   = "Allow"
@@ -114,7 +114,7 @@ resource "aws_iam_role_policy" "lambda_app" {
       {
         Effect   = "Allow"
         Action   = ["scheduler:CreateSchedule", "scheduler:DeleteSchedule", "scheduler:GetSchedule"]
-        Resource = "arn:aws:scheduler:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:schedule/default/pt-*"
+        Resource = "arn:aws:scheduler:${data.aws_region.current.region}:${data.aws_caller_identity.current.account_id}:schedule/default/pt-*"
       },
       {
         Effect   = "Allow"
@@ -169,7 +169,7 @@ resource "aws_lambda_function" "handler" {
 
   function_name    = each.key == "pickTimeout" ? local.pick_timeout_function_name : "fantasy-draft-${each.key}-${var.env}"
   role             = aws_iam_role.lambda_exec.arn
-  runtime          = "nodejs20.x"
+  runtime          = "nodejs24.x"
   handler          = "${each.key}.handler"
   filename         = data.archive_file.handler[each.key].output_path
   source_code_hash = data.archive_file.handler[each.key].output_base64sha256
