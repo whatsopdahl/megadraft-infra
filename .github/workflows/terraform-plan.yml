@@ -1,0 +1,73 @@
+name: Terraform Plan
+
+# Runs terraform plan for both envs on every PR into main, using a
+# read-only AWS role - lets reviewers see the diff before terraform-apply.yml
+# auto-applies it to dev on merge.
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  id-token: write # required to assume the AWS role via OIDC
+  contents: read
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        environment: [dev, prod]
+    concurrency:
+      group: terraform-plan-${{ github.event.pull_request.number }}-${{ matrix.environment }}
+      cancel-in-progress: true
+    steps:
+      - name: Checkout infrastructure
+        uses: actions/checkout@v4
+        with:
+          path: infrastructure
+
+      - name: Checkout lambda
+        uses: actions/checkout@v4
+        with:
+          repository: whatsopdahl/megadraft-lambdas
+          path: lambda
+          token: ${{ secrets.LAMBDA_REPO_PAT }}
+
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: lambda/package.json
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: lambda/pnpm-lock.yaml
+
+      - name: Install lambda dependencies
+        working-directory: lambda
+        run: pnpm install --frozen-lockfile
+
+      - name: Build lambdas
+        working-directory: lambda
+        run: pnpm build
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_TERRAFORM_PLAN_ROLE_ARN }}
+          aws-region: us-east-1
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.15.8"
+
+      - name: Terraform init
+        working-directory: infrastructure/envs/${{ matrix.environment }}
+        run: terraform init
+
+      - name: Terraform plan
+        working-directory: infrastructure/envs/${{ matrix.environment }}
+        env:
+          TF_VAR_google_client_id: ${{ vars.GOOGLE_CLIENT_ID }}
+        run: terraform plan -input=false -var-file=${{ matrix.environment }}.tfvars

@@ -1,0 +1,94 @@
+name: Terraform Apply
+
+# Push to main auto-applies envs/dev. envs/prod only applies via
+# workflow_dispatch, gated by the "prod" GitHub Environment's required
+# reviewers (repo Settings > Environments > prod - not Terraform-managed).
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Target environment"
+        type: choice
+        options: [dev, prod]
+        default: dev
+        required: true
+
+permissions:
+  id-token: write # required to assume the AWS role via OIDC
+  contents: read
+
+concurrency:
+  # Terraform's S3 lockfile would serialize concurrent applies to the same
+  # env anyway; this just avoids piling up queued runs behind that lock.
+  group: terraform-apply-${{ github.event.inputs.environment || 'dev' }}
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment || 'dev' }}
+    steps:
+      - name: Resolve target environment
+        id: target
+        run: echo "environment=${{ github.event.inputs.environment || 'dev' }}" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout infrastructure
+        uses: actions/checkout@v4
+        with:
+          path: infrastructure
+
+      # Checked out under lambda/ so its path lines up with envs/<env>'s
+      # default lambda_dist_dir (../../../lambda/dist), same layout as
+      # local development - the websocket/rest-api modules zip these files
+      # directly, so they must exist on disk before `terraform apply`.
+      - name: Checkout lambda
+        uses: actions/checkout@v4
+        with:
+          repository: whatsopdahl/megadraft-lambdas
+          path: lambda
+          token: ${{ secrets.LAMBDA_REPO_PAT }}
+
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: lambda/package.json
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: lambda/pnpm-lock.yaml
+
+      - name: Install lambda dependencies
+        working-directory: lambda
+        run: pnpm install --frozen-lockfile
+
+      - name: Build lambdas
+        working-directory: lambda
+        run: pnpm build
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_TERRAFORM_APPLY_ROLE_ARN }}
+          aws-region: us-east-1
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          # >= 1.10 required: backend.tf uses use_lockfile (S3 native state
+          # locking), which older Terraform CLI versions reject outright.
+          terraform_version: "1.15.8"
+
+      - name: Terraform init
+        working-directory: infrastructure/envs/${{ steps.target.outputs.environment }}
+        run: terraform init
+
+      - name: Terraform apply
+        working-directory: infrastructure/envs/${{ steps.target.outputs.environment }}
+        env:
+          # google_client_id is a public value (README: "safe to commit")
+          # but isn't in the committed prod.tfvars (dev.tfvars omits it
+          # entirely) - CI supplies it via a repo variable instead, which
+          # overrides the -var-file value.
+          TF_VAR_google_client_id: ${{ vars.GOOGLE_CLIENT_ID }}
+        run: terraform apply -auto-approve -var-file=${{ steps.target.outputs.environment }}.tfvars
