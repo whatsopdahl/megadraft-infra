@@ -104,9 +104,31 @@ resource "aws_iam_role_policy" "github_actions_deploy" {
           "acm:Describe*", "acm:List*",
           "cloudfront:Get*", "cloudfront:List*",
           "route53:Get*", "route53:List*",
-          "s3:GetBucket*", "s3:ListBucket", "s3:ListAllMyBuckets",
         ]
         Resource = "*"
+      },
+      {
+        # Separate from the read-only block above because these s3:Get*/
+        # s3:List* actions *can* be resource-scoped (unlike the account-wide
+        # services up there), so they're pinned to just the two buckets this
+        # project owns - the terraform state bucket and the frontend-hosting
+        # bucket(s) (fantasy-draft-frontend-<env>-<account_id>) - instead of
+        # every bucket in the account.
+        #
+        # Not just "GetBucket*": the frontend bucket's config reads
+        # (accelerate, encryption, lifecycle, replication, ...) use IAM
+        # action names that drop "Bucket" entirely, e.g.
+        # s3:GetAccelerateConfiguration - so this needs the full s3:Get*/
+        # s3:List* surface, not a narrower guess at the exact action list.
+        Sid    = "S3ReadOnlyProjectBuckets"
+        Effect = "Allow"
+        Action = ["s3:Get*", "s3:List*"]
+        Resource = [
+          aws_s3_bucket.terraform_state.arn,
+          "${aws_s3_bucket.terraform_state.arn}/*",
+          "arn:aws:s3:::fantasy-draft-frontend-*-${data.aws_caller_identity.current.account_id}",
+          "arn:aws:s3:::fantasy-draft-frontend-*-${data.aws_caller_identity.current.account_id}/*",
+        ]
       },
       {
         Sid    = "DeployLambdaCode"
