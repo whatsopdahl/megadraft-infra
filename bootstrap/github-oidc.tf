@@ -16,6 +16,23 @@ variable "github_lambda_repo" {
   default     = "megadraft-lambdas"
 }
 
+# GitHub's immutable subject-claim format ties the sub claim to these
+# permanent numeric IDs instead of the mutable owner/repo names, so a
+# recycled or renamed org/repo can never mint a token matching this trust
+# policy. IDs don't change even if the repo is renamed - unlike the name
+# variables above, these aren't meant to be edited casually.
+variable "github_owner_id" {
+  description = "Immutable numeric ID of the whatsopdahl GitHub account"
+  type        = string
+  default     = "10856113"
+}
+
+variable "github_lambda_repo_id" {
+  description = "Immutable numeric ID of the megadraft-lambdas repo"
+  type        = string
+  default     = "1338863906"
+}
+
 data "aws_caller_identity" "current" {}
 
 # AWS allows only one OIDC provider per issuer URL per account, and this one
@@ -47,8 +64,14 @@ resource "aws_iam_role" "github_actions_deploy" {
         # assume the role. Pair with required-reviewer protection rules on
         # the "prod" environment (GitHub repo Settings, not Terraform-managed)
         # to gate production deploys behind manual approval.
+        #
+        # Immutable subject format (megadraft-lambdas was created after
+        # GitHub's July 2026 cutover): owner and repo names are pinned to
+        # their permanent numeric IDs via the "@" separator, so this trust
+        # policy can't be hijacked by someone recreating a repo/org with the
+        # same name later.
         StringLike = {
-          "token.actions.githubusercontent.com:sub" = "repo:${var.github_org}/${var.github_lambda_repo}:environment:*"
+          "token.actions.githubusercontent.com:sub" = "repo:${var.github_org}@${var.github_owner_id}/${var.github_lambda_repo}@${var.github_lambda_repo_id}:environment:*"
         }
       }
     }]
