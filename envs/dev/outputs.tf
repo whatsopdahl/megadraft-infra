@@ -14,20 +14,12 @@ output "draft_picks_table_name" {
   value = module.dynamodb.draft_picks_table_name
 }
 
-output "cognito_user_pool_id" {
-  value = module.cognito.user_pool_id
-}
-
-output "cognito_user_pool_client_id" {
-  value = module.cognito.user_pool_client_id
-}
-
-output "cognito_hosted_ui_domain" {
-  value = module.cognito.hosted_ui_domain
-}
-
 output "websocket_endpoint" {
   value = module.websocket_api.websocket_endpoint
+}
+
+output "rest_api_endpoint" {
+  value = module.rest_api.rest_api_endpoint
 }
 
 output "frontend_site_url" {

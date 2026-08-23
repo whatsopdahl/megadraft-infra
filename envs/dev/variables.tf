@@ -21,26 +21,14 @@ variable "subdomain" {
 }
 
 variable "google_client_id" {
-  description = "Google OAuth 2.0 client ID for Cognito federation"
-  type        = string
-  sensitive   = true
-}
-
-variable "google_client_secret" {
-  description = "Google OAuth 2.0 client secret for Cognito federation"
-  type        = string
-  sensitive   = true
-}
-
-variable "cognito_domain_prefix" {
-  description = "Unique prefix for the Cognito Hosted UI domain"
+  description = "Google OAuth client ID, used as the audience when verifying Google ID tokens (public value, safe to commit)"
   type        = string
 }
 
 variable "lambda_dist_dir" {
-  description = "Path to the fantasy-draft-lambdas dist/ directory (run `pnpm build` there first)"
+  description = "Path to the lambda repo's dist/ directory (run `pnpm build` there first)"
   type        = string
-  default     = "../../../fantasy-draft-lambdas/dist"
+  default     = "../../../lambda/dist"
 }
 
 variable "log_retention_days" {

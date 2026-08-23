@@ -1,28 +1,11 @@
 locals {
-  full_domain = "${var.subdomain}.${var.root_domain}"
-
-  # Cognito Hosted UI needs the frontend's callback/logout URLs. Using the
-  # planned CloudFront domain here; update if you serve auth callbacks from a
-  # different path.
-  callback_urls = ["https://${local.full_domain}/auth/callback"]
-  logout_urls   = ["https://${local.full_domain}/"]
+  cors_allow_origins = ["https://${var.subdomain}.${var.root_domain}"]
 }
 
 module "dynamodb" {
   source = "../../modules/dynamodb"
 
   env = var.env
-}
-
-module "cognito" {
-  source = "../../modules/cognito"
-
-  env                   = var.env
-  callback_urls         = local.callback_urls
-  logout_urls           = local.logout_urls
-  google_client_id      = var.google_client_id
-  google_client_secret  = var.google_client_secret
-  cognito_domain_prefix = var.cognito_domain_prefix
 }
 
 module "websocket_api" {
@@ -41,8 +24,26 @@ module "websocket_api" {
   draft_picks_table_name = module.dynamodb.draft_picks_table_name
   draft_picks_table_arn  = module.dynamodb.draft_picks_table_arn
 
-  cognito_user_pool_id        = module.cognito.user_pool_id
-  cognito_user_pool_client_id = module.cognito.user_pool_client_id
+  google_client_id = var.google_client_id
+}
+
+module "rest_api" {
+  source = "../../modules/rest-api"
+
+  env                = var.env
+  lambda_dist_dir    = var.lambda_dist_dir
+  log_retention_days = var.log_retention_days
+
+  drafts_table_name      = module.dynamodb.drafts_table_name
+  drafts_table_arn       = module.dynamodb.drafts_table_arn
+  connections_table_name = module.dynamodb.connections_table_name
+  connections_table_arn  = module.dynamodb.connections_table_arn
+
+  google_client_id   = var.google_client_id
+  cors_allow_origins = local.cors_allow_origins
+
+  websocket_execution_arn       = module.websocket_api.execution_arn
+  websocket_management_endpoint = module.websocket_api.management_endpoint
 }
 
 module "frontend_hosting" {

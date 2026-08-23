@@ -9,9 +9,11 @@ data "aws_caller_identity" "current" {}
 data "aws_region" "current" {}
 
 locals {
+  # createDraft/joinDraft live on the REST API (modules/rest-api) - this
+  # WebSocket API is draft-room-only.
   handler_names = [
     "connect", "disconnect", "default",
-    "createDraft", "joinDraft", "startDraft", "makePick", "pickTimeout", "getDraftState",
+    "startDraft", "makePick", "pickTimeout", "getDraftState",
   ]
 
   # Routes served by API Gateway (excludes pickTimeout, which EventBridge
@@ -20,8 +22,6 @@ locals {
     "$connect"      = "connect"
     "$disconnect"   = "disconnect"
     "$default"      = "default"
-    "createDraft"   = "createDraft"
-    "joinDraft"     = "joinDraft"
     "startDraft"    = "startDraft"
     "makePick"      = "makePick"
     "getDraftState" = "getDraftState"
@@ -42,8 +42,7 @@ locals {
     DRAFTS_TABLE                  = var.drafts_table_name
     PLAYERS_TABLE                 = var.players_table_name
     DRAFT_PICKS_TABLE             = var.draft_picks_table_name
-    COGNITO_USER_POOL_ID          = var.cognito_user_pool_id
-    COGNITO_CLIENT_ID             = var.cognito_user_pool_client_id
+    GOOGLE_CLIENT_ID              = var.google_client_id
     WEBSOCKET_MANAGEMENT_ENDPOINT = "https://${aws_apigatewayv2_api.this.id}.execute-api.${data.aws_region.current.name}.amazonaws.com/${aws_apigatewayv2_stage.this.name}"
     SCHEDULER_ROLE_ARN            = aws_iam_role.scheduler_invoke.arn
     PICK_TIMEOUT_FUNCTION_ARN     = local.pick_timeout_arn
@@ -99,6 +98,13 @@ resource "aws_iam_role_policy" "lambda_app" {
           var.players_table_arn,
           var.draft_picks_table_arn,
         ]
+      },
+      {
+        # makePick/pickTimeout write to the per-draft roster table created at
+        # draft-creation time (see modules/rest-api's createDraft handler).
+        Effect   = "Allow"
+        Action   = ["dynamodb:PutItem"]
+        Resource = "arn:aws:dynamodb:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:table/megadraft-*-rosters"
       },
       {
         Effect   = "Allow"

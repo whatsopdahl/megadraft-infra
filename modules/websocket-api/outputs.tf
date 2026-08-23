@@ -10,6 +10,10 @@ output "api_id" {
   value = aws_apigatewayv2_api.this.id
 }
 
+output "execution_arn" {
+  value = aws_apigatewayv2_api.this.execution_arn
+}
+
 output "pick_timeout_function_arn" {
   value = local.pick_timeout_arn
 }

@@ -1,9 +1,12 @@
 # 4 on-demand DynamoDB tables. On-demand (PAY_PER_REQUEST) billing is used
 # throughout since traffic is spiky (draft nights) and near-zero otherwise -
 # provisioned capacity would waste money sitting idle.
+#
+# NOTE: table `name` is not updatable in place - changing it forces Terraform
+# to destroy and recreate the table (data loss) on the next apply.
 
 resource "aws_dynamodb_table" "connections" {
-  name         = "fantasy-draft-connections-${var.env}"
+  name         = "megadraft-connections-${var.env}"
   billing_mode = "PAY_PER_REQUEST"
   hash_key     = "connectionId"
 
@@ -35,7 +38,7 @@ resource "aws_dynamodb_table" "connections" {
 }
 
 resource "aws_dynamodb_table" "drafts" {
-  name         = "fantasy-draft-drafts-${var.env}"
+  name         = "megadraft-drafts-${var.env}"
   billing_mode = "PAY_PER_REQUEST"
   hash_key     = "draftId"
 
@@ -49,7 +52,7 @@ resource "aws_dynamodb_table" "drafts" {
 # Shared across all drafts - seeded once via the player seed script, not
 # duplicated per draft or per league instance.
 resource "aws_dynamodb_table" "players" {
-  name         = "fantasy-draft-players-${var.env}"
+  name         = "megadraft-players-${var.env}"
   billing_mode = "PAY_PER_REQUEST"
   hash_key     = "sportLeague"
   range_key    = "playerId"
@@ -67,7 +70,7 @@ resource "aws_dynamodb_table" "players" {
 
 # Per-draft pick state: who picked whom, in what order.
 resource "aws_dynamodb_table" "draft_picks" {
-  name         = "fantasy-draft-draft-picks-${var.env}"
+  name         = "megadraft-draft-picks-${var.env}"
   billing_mode = "PAY_PER_REQUEST"
   hash_key     = "draftId"
   range_key    = "pickNumber"
