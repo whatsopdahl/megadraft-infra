@@ -6,6 +6,10 @@ Draft creation (`POST /drafts`), fetching/editing draft settings (`GET`/`PATCH /
 
 See `envs/dev` and `envs/prod` for per-environment configuration. Dev is designed to be fully destroyable and re-appliable on demand (`terraform destroy` / `terraform apply`).
 
+## CI deploys
+
+`bootstrap/github-oidc.tf` provisions the GitHub Actions OIDC provider and IAM role that [megadraft-lambdas](https://github.com/whatsopdahl/megadraft-lambdas)'s `.github/workflows/deploy.yml` assumes to deploy Lambda code — apply it once (part of the normal `bootstrap` apply) and put its `github_actions_deploy_role_arn` output into that repo's `AWS_DEPLOY_ROLE_ARN` secret. See that repo's README for the full CI setup checklist. The role is scoped to updating `fantasy-draft-*` Lambda function code only — it can't touch DynamoDB, API Gateway, or other stack resources, so infra changes still go through a manual `terraform apply` from here.
+
 ## Prerequisites
 
 - Terraform >= 1.7
