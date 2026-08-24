@@ -7,10 +7,15 @@
 #
 # Two roles instead of one:
 #   - terraform-apply: full create/update/delete on the fantasy-draft
-#     stack. Trusted only for the `ref:refs/heads/main` subject - pushes to
-#     main and workflow_dispatch runs started from main. Never assumable
-#     from a pull_request event, so a PR branch can never hold write
-#     credentials before review.
+#     stack. The apply job in terraform-apply.yml always runs under a
+#     GitHub Environment (dev/prod), which replaces the token's normal
+#     ref-based sub claim with the `environment:<name>` form - so this
+#     trusts that subject instead of a ref, same as the lambda deploy role.
+#     Never assumable from a pull_request event (those jobs don't declare
+#     an environment), so a PR branch can never hold write credentials
+#     before review. Pair with required-reviewer protection rules on the
+#     "prod" environment (GitHub repo Settings, not Terraform-managed) to
+#     gate production applies behind manual approval.
 #   - terraform-plan: read-only. Trusted for the `pull_request` subject so
 #     PR workflows can run `terraform plan` for review. GitHub doesn't
 #     expose secrets or OIDC tokens to pull_request runs triggered from
@@ -76,7 +81,7 @@ resource "aws_iam_role" "github_actions_terraform_apply" {
           "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com"
         }
         StringLike = {
-          "token.actions.githubusercontent.com:sub" = "${local.infra_repo_sub_prefix}:ref:refs/heads/main"
+          "token.actions.githubusercontent.com:sub" = "${local.infra_repo_sub_prefix}:environment:*"
         }
       }
     }]
@@ -103,6 +108,11 @@ resource "aws_iam_role_policy" "github_actions_terraform_apply" {
           "cloudfront:Get*", "cloudfront:List*",
           "route53:Get*", "route53:List*",
           "iam:ListInstanceProfilesForRole", "iam:ListRoleTags",
+          # CloudWatch Logs doesn't support resource-level permissions for
+          # DescribeLogGroups (the provider calls it name-prefix-filtered,
+          # not by exact ARN) - AWS requires Resource "*" for this action
+          # specifically, unlike the other logs:* actions below.
+          "logs:DescribeLogGroups",
         ]
         Resource = "*"
       },
@@ -122,15 +132,20 @@ resource "aws_iam_role_policy" "github_actions_terraform_apply" {
       },
       {
         # No lambda:InvokeFunction - Terraform never needs to invoke these,
-        # only manage their code/config.
+        # only manage their code/config. lambda:Get*/List* covers every
+        # per-function read the provider does while refreshing an
+        # aws_lambda_function (code signing config, event invoke config,
+        # concurrency, etc.) instead of enumerating each one and playing
+        # AccessDenied whack-a-mole as the provider adds more.
         Sid    = "LambdaManageFunctions"
         Effect = "Allow"
         Action = [
-          "lambda:CreateFunction", "lambda:DeleteFunction", "lambda:GetFunction", "lambda:GetFunctionConfiguration",
+          "lambda:CreateFunction", "lambda:DeleteFunction",
+          "lambda:Get*", "lambda:List*",
           "lambda:UpdateFunctionCode", "lambda:UpdateFunctionConfiguration",
-          "lambda:PublishVersion", "lambda:ListVersionsByFunction",
-          "lambda:TagResource", "lambda:UntagResource", "lambda:ListTags",
-          "lambda:AddPermission", "lambda:RemovePermission", "lambda:GetPolicy",
+          "lambda:PublishVersion",
+          "lambda:TagResource", "lambda:UntagResource",
+          "lambda:AddPermission", "lambda:RemovePermission",
           "lambda:PutFunctionConcurrency", "lambda:DeleteFunctionConcurrency",
         ]
         Resource = local.lambda_fn_arn
@@ -156,7 +171,7 @@ resource "aws_iam_role_policy" "github_actions_terraform_apply" {
         Sid    = "LogsManageLambdaLogGroups"
         Effect = "Allow"
         Action = [
-          "logs:CreateLogGroup", "logs:DeleteLogGroup", "logs:DescribeLogGroups",
+          "logs:CreateLogGroup", "logs:DeleteLogGroup",
           "logs:PutRetentionPolicy", "logs:DeleteRetentionPolicy",
           "logs:TagResource", "logs:UntagResource", "logs:ListTagsForResource",
         ]
