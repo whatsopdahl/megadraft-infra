@@ -9,15 +9,16 @@ data "aws_caller_identity" "current" {}
 data "aws_region" "current" {}
 
 locals {
-  handler_names = ["createDraft", "getDraft", "updateDraft", "joinDraft", "listMyDrafts", "updateTeam"]
+  handler_names = ["createDraft", "getDraft", "updateDraft", "joinDraft", "listMyDrafts", "updateTeam", "deleteDraft"]
 
   # route_key => handler name
   route_to_handler = {
-    "POST /drafts"                = "createDraft"
-    "GET /drafts"                 = "listMyDrafts"
-    "GET /drafts/{draftId}"       = "getDraft"
-    "PATCH /drafts/{draftId}"     = "updateDraft"
-    "POST /drafts/{draftId}/join" = "joinDraft"
+    "POST /drafts"                 = "createDraft"
+    "GET /drafts"                  = "listMyDrafts"
+    "GET /drafts/{draftId}"        = "getDraft"
+    "PATCH /drafts/{draftId}"      = "updateDraft"
+    "DELETE /drafts/{draftId}"     = "deleteDraft"
+    "POST /drafts/{draftId}/join"  = "joinDraft"
     "PATCH /drafts/{draftId}/team" = "updateTeam"
   }
 
@@ -35,7 +36,7 @@ resource "aws_apigatewayv2_api" "this" {
 
   cors_configuration {
     allow_origins = var.cors_allow_origins
-    allow_methods = ["GET", "POST", "PATCH", "OPTIONS"]
+    allow_methods = ["GET", "POST", "PATCH", "DELETE", "OPTIONS"]
     allow_headers = ["authorization", "content-type"]
     max_age       = 300
   }
@@ -75,7 +76,7 @@ resource "aws_iam_role_policy" "lambda_app" {
       {
         Effect = "Allow"
         Action = [
-          "dynamodb:GetItem", "dynamodb:PutItem", "dynamodb:UpdateItem", "dynamodb:Scan",
+          "dynamodb:GetItem", "dynamodb:PutItem", "dynamodb:UpdateItem", "dynamodb:DeleteItem", "dynamodb:Scan",
         ]
         Resource = [var.drafts_table_arn]
       },
@@ -85,9 +86,10 @@ resource "aws_iam_role_policy" "lambda_app" {
         Resource = "${var.connections_table_arn}/index/*"
       },
       {
-        # createDraft provisions each draft's own roster table on the fly.
+        # createDraft provisions each draft's own roster table on the fly;
+        # deleteDraft tears it back down when the draft itself is deleted.
         Effect   = "Allow"
-        Action   = ["dynamodb:CreateTable"]
+        Action   = ["dynamodb:CreateTable", "dynamodb:DeleteTable"]
         Resource = "arn:aws:dynamodb:${data.aws_region.current.region}:${data.aws_caller_identity.current.account_id}:table/megadraft-*-rosters"
       },
       {
