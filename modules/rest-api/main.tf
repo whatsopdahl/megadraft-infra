@@ -9,14 +9,16 @@ data "aws_caller_identity" "current" {}
 data "aws_region" "current" {}
 
 locals {
-  handler_names = ["createDraft", "getDraft", "updateDraft", "joinDraft"]
+  handler_names = ["createDraft", "getDraft", "updateDraft", "joinDraft", "listMyDrafts", "updateTeam"]
 
   # route_key => handler name
   route_to_handler = {
-    "POST /drafts"             = "createDraft"
-    "GET /drafts/{draftId}"    = "getDraft"
-    "PATCH /drafts/{draftId}"  = "updateDraft"
+    "POST /drafts"                = "createDraft"
+    "GET /drafts"                 = "listMyDrafts"
+    "GET /drafts/{draftId}"       = "getDraft"
+    "PATCH /drafts/{draftId}"     = "updateDraft"
     "POST /drafts/{draftId}/join" = "joinDraft"
+    "PATCH /drafts/{draftId}/team" = "updateTeam"
   }
 
   common_env = {
@@ -73,7 +75,7 @@ resource "aws_iam_role_policy" "lambda_app" {
       {
         Effect = "Allow"
         Action = [
-          "dynamodb:GetItem", "dynamodb:PutItem", "dynamodb:UpdateItem",
+          "dynamodb:GetItem", "dynamodb:PutItem", "dynamodb:UpdateItem", "dynamodb:Scan",
         ]
         Resource = [var.drafts_table_arn]
       },
