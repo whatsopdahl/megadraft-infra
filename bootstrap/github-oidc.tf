@@ -184,20 +184,26 @@ resource "aws_iam_role_policy" "github_actions_deploy" {
         # actions (CreateApi etc. require Resource "*"), so this is scoped
         # by the "/apis" resource namespace instead - full manage of HTTP
         # and WebSocket APIs, nothing else in the account uses API Gateway.
+        # CreateApi with tags also POSTs to the separate "/tags" namespace
+        # (a distinct ARN resource, not a sub-path of "/apis"), so both are
+        # needed.
         Sid      = "ApiGatewayManage"
         Effect   = "Allow"
         Action   = ["apigateway:*"]
-        Resource = "arn:aws:apigateway:*::/apis*"
+        Resource = ["arn:aws:apigateway:*::/apis*", "arn:aws:apigateway:*::/tags/*"]
       },
       {
         # modules/player-sync creates the secret container only - no
         # GetSecretValue/PutSecretValue, since Terraform never manages the
         # actual espn_s2/SWID value (set manually, see that repo's README).
+        # GetResourcePolicy is a read the provider makes on every
+        # create/refresh of aws_secretsmanager_secret (checks for a
+        # resource-based policy), not just an update-path action.
         Sid    = "SecretsManagerManageEspnCredentials"
         Effect = "Allow"
         Action = [
           "secretsmanager:CreateSecret", "secretsmanager:DeleteSecret", "secretsmanager:DescribeSecret",
-          "secretsmanager:TagResource", "secretsmanager:UntagResource",
+          "secretsmanager:GetResourcePolicy", "secretsmanager:TagResource", "secretsmanager:UntagResource",
         ]
         Resource = local.espn_credentials_secret_arn
       },
@@ -265,7 +271,7 @@ resource "aws_iam_role_policy" "github_actions_lambda_terraform_plan" {
       {
         Sid      = "SecretsManagerReadOnly"
         Effect   = "Allow"
-        Action   = ["secretsmanager:DescribeSecret"]
+        Action   = ["secretsmanager:DescribeSecret", "secretsmanager:GetResourcePolicy"]
         Resource = local.espn_credentials_secret_arn
       },
       {
