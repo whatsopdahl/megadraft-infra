@@ -24,33 +24,6 @@ jobs:
     steps:
       - name: Checkout infrastructure
         uses: actions/checkout@v4
-        with:
-          path: infrastructure
-
-      - name: Checkout lambda
-        uses: actions/checkout@v4
-        with:
-          repository: whatsopdahl/megadraft-lambdas
-          path: lambda
-          token: ${{ secrets.LAMBDA_REPO_PAT }}
-
-      - uses: pnpm/action-setup@v4
-        with:
-          package_json_file: lambda/package.json
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 24
-          cache: pnpm
-          cache-dependency-path: lambda/pnpm-lock.yaml
-
-      - name: Install lambda dependencies
-        working-directory: lambda
-        run: pnpm install --frozen-lockfile
-
-      - name: Build lambdas
-        working-directory: lambda
-        run: pnpm build
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -63,11 +36,9 @@ jobs:
           terraform_version: "1.15.8"
 
       - name: Terraform init
-        working-directory: infrastructure/envs/${{ matrix.environment }}
+        working-directory: envs/${{ matrix.environment }}
         run: terraform init
 
       - name: Terraform plan
-        working-directory: infrastructure/envs/${{ matrix.environment }}
-        env:
-          TF_VAR_google_client_id: ${{ vars.GOOGLE_CLIENT_ID }}
+        working-directory: envs/${{ matrix.environment }}
         run: terraform plan -input=false -var-file=${{ matrix.environment }}.tfvars

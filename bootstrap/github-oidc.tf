@@ -78,6 +78,17 @@ resource "aws_iam_role" "github_actions_deploy" {
   })
 }
 
+# This repo now owns the rest-api/websocket-api Terraform (moved out of
+# megadraft-infra to remove the cross-repo build race between the two repos'
+# CI). That means the deploy role below needs real create/update/delete on
+# Lambda functions, their IAM roles, their log groups, and API Gateway v2 -
+# the "code-only, fails closed" scoping this role used to have doesn't apply
+# to those resource types anymore. It's still deliberately narrower than
+# megadraft-infra's terraform-apply role: no dynamodb table schema, route53,
+# acm, cloudfront, or frontend S3 bucket access - those stay exclusively
+# managed by megadraft-infra. Reuses local.lambda_fn_arn/iam_role_arn/
+# log_group_arn already defined in github-oidc-terraform.tf (same module).
+
 resource "aws_iam_role_policy" "github_actions_deploy" {
   name = "lambda-deploy"
   role = aws_iam_role.github_actions_deploy.id
@@ -89,17 +100,15 @@ resource "aws_iam_role_policy" "github_actions_deploy" {
         # terraform plan/apply refreshes every resource in the stack
         # (dynamodb, apigatewayv2, lambda, iam, logs, acm, cloudfront,
         # route53, s3) even when only Lambda code changed, so it needs
-        # broad read access. Mutating access below stays scoped to Lambda
-        # + the state bucket, so an apply that would touch anything else
-        # in the stack fails closed instead of silently changing it.
+        # broad read access. Mutating access for dynamodb/acm/cloudfront/
+        # route53/frontend-s3 stays out of this role entirely - those
+        # resource types are still exclusively megadraft-infra's.
         Sid    = "TerraformRefreshReadOnly"
         Effect = "Allow"
         Action = [
           "dynamodb:Describe*", "dynamodb:List*",
           "lambda:Get*", "lambda:List*",
-          "apigateway:GET",
           "logs:Describe*", "logs:List*", "logs:Get*", "logs:ListTagsForResource",
-          "iam:GetRole", "iam:GetRolePolicy", "iam:ListRolePolicies", "iam:ListAttachedRolePolicies",
           "iam:ListInstanceProfilesForRole", "iam:ListRoleTags",
           "acm:Describe*", "acm:List*",
           "cloudfront:Get*", "cloudfront:List*",
@@ -131,16 +140,54 @@ resource "aws_iam_role_policy" "github_actions_deploy" {
         ]
       },
       {
-        Sid    = "DeployLambdaCode"
+        Sid    = "LambdaManageFunctions"
         Effect = "Allow"
         Action = [
-          "lambda:UpdateFunctionCode",
-          "lambda:UpdateFunctionConfiguration",
+          "lambda:CreateFunction", "lambda:DeleteFunction",
+          "lambda:UpdateFunctionCode", "lambda:UpdateFunctionConfiguration",
           "lambda:PublishVersion",
-          "lambda:TagResource",
-          "lambda:UntagResource",
+          "lambda:TagResource", "lambda:UntagResource",
+          "lambda:AddPermission", "lambda:RemovePermission",
+          "lambda:PutFunctionConcurrency", "lambda:DeleteFunctionConcurrency",
         ]
-        Resource = "arn:aws:lambda:*:${data.aws_caller_identity.current.account_id}:function:fantasy-draft-*"
+        Resource = local.lambda_fn_arn
+      },
+      {
+        # Covers both the rest-api/websocket-api Lambda exec roles and the
+        # EventBridge Scheduler invoke role (all named fantasy-draft-*).
+        # Includes iam:PassRole, scoped to the same prefix, so Terraform can
+        # attach these roles to the Lambda functions/schedules it creates.
+        Sid    = "IAMManageProjectRoles"
+        Effect = "Allow"
+        Action = [
+          "iam:CreateRole", "iam:DeleteRole", "iam:GetRole",
+          "iam:UpdateRole", "iam:UpdateAssumeRolePolicy",
+          "iam:PutRolePolicy", "iam:GetRolePolicy", "iam:DeleteRolePolicy", "iam:ListRolePolicies",
+          "iam:AttachRolePolicy", "iam:DetachRolePolicy", "iam:ListAttachedRolePolicies",
+          "iam:TagRole", "iam:UntagRole",
+          "iam:PassRole",
+        ]
+        Resource = local.iam_role_arn
+      },
+      {
+        Sid    = "LogsManageLambdaLogGroups"
+        Effect = "Allow"
+        Action = [
+          "logs:CreateLogGroup", "logs:DeleteLogGroup",
+          "logs:PutRetentionPolicy", "logs:DeleteRetentionPolicy",
+          "logs:TagResource", "logs:UntagResource", "logs:ListTagsForResource",
+        ]
+        Resource = [local.log_group_arn, "${local.log_group_arn}:*"]
+      },
+      {
+        # API Gateway v2 doesn't support resource-scoped IAM for most
+        # actions (CreateApi etc. require Resource "*"), so this is scoped
+        # by the "/apis" resource namespace instead - full manage of HTTP
+        # and WebSocket APIs, nothing else in the account uses API Gateway.
+        Sid      = "ApiGatewayManage"
+        Effect   = "Allow"
+        Action   = ["apigateway:*"]
+        Resource = "arn:aws:apigateway:*::/apis*"
       },
       {
         Sid      = "TerraformState"
@@ -154,4 +201,78 @@ resource "aws_iam_role_policy" "github_actions_deploy" {
 
 output "github_actions_deploy_role_arn" {
   value = aws_iam_role.github_actions_deploy.arn
+}
+
+# --- terraform-plan (read-only, PR review) ---------------------------------
+# Now that this repo owns real Terraform (rest-api/websocket-api), PRs
+# against it get the same plan-preview treatment megadraft-infra's PRs
+# already get, via the same pattern: a read-only role trusted only for the
+# pull_request subject.
+
+resource "aws_iam_role" "github_actions_lambda_terraform_plan" {
+  name = "github-actions-lambda-terraform-plan"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect    = "Allow"
+      Principal = { Federated = data.aws_iam_openid_connect_provider.github_actions.arn }
+      Action    = "sts:AssumeRoleWithWebIdentity"
+      Condition = {
+        StringEquals = {
+          "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com"
+        }
+        StringLike = {
+          "token.actions.githubusercontent.com:sub" = "repo:${var.github_org}@${var.github_owner_id}/${var.github_lambda_repo}@${var.github_lambda_repo_id}:pull_request"
+        }
+      }
+    }]
+  })
+}
+
+resource "aws_iam_role_policy" "github_actions_lambda_terraform_plan" {
+  name = "lambda-terraform-plan"
+  role = aws_iam_role.github_actions_lambda_terraform_plan.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "TerraformPlanReadOnly"
+        Effect = "Allow"
+        Action = [
+          "dynamodb:Describe*", "dynamodb:List*",
+          "lambda:Get*", "lambda:List*",
+          "iam:GetRole", "iam:GetRolePolicy", "iam:ListRolePolicies", "iam:ListAttachedRolePolicies",
+          "iam:ListInstanceProfilesForRole", "iam:ListRoleTags",
+          "logs:Describe*", "logs:List*", "logs:Get*", "logs:ListTagsForResource",
+          "apigateway:GET",
+        ]
+        Resource = "*"
+      },
+      {
+        Sid    = "S3ReadOnlyProjectBuckets"
+        Effect = "Allow"
+        Action = ["s3:Get*", "s3:List*"]
+        Resource = [
+          aws_s3_bucket.terraform_state.arn,
+          "${aws_s3_bucket.terraform_state.arn}/*",
+        ]
+      },
+      {
+        # S3 native state locking (use_lockfile) takes a conditional
+        # PutObject/DeleteObject against a .tflock object even for a
+        # read-only `terraform plan`, so this needs write access to the
+        # lock file despite otherwise being read-only.
+        Sid      = "TerraformStateLock"
+        Effect   = "Allow"
+        Action   = ["s3:GetObject", "s3:PutObject", "s3:DeleteObject"]
+        Resource = "${aws_s3_bucket.terraform_state.arn}/fantasy-draft/*"
+      },
+    ]
+  })
+}
+
+output "github_actions_lambda_terraform_plan_role_arn" {
+  value = aws_iam_role.github_actions_lambda_terraform_plan.arn
 }

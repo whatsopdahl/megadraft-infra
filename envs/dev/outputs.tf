@@ -14,14 +14,6 @@ output "draft_picks_table_name" {
   value = module.dynamodb.draft_picks_table_name
 }
 
-output "websocket_endpoint" {
-  value = module.websocket_api.websocket_endpoint
-}
-
-output "rest_api_endpoint" {
-  value = module.rest_api.rest_api_endpoint
-}
-
 output "frontend_site_url" {
   value = module.frontend_hosting.site_url
 }

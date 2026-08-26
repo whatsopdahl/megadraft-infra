@@ -1,7 +1,0 @@
-output "rest_api_endpoint" {
-  value = aws_apigatewayv2_stage.this.invoke_url
-}
-
-output "api_id" {
-  value = aws_apigatewayv2_api.this.id
-}

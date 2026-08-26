@@ -35,37 +35,6 @@ jobs:
 
       - name: Checkout infrastructure
         uses: actions/checkout@v4
-        with:
-          path: infrastructure
-
-      # Checked out under lambda/ so its path lines up with envs/<env>'s
-      # default lambda_dist_dir (../../../lambda/dist), same layout as
-      # local development - the websocket/rest-api modules zip these files
-      # directly, so they must exist on disk before `terraform apply`.
-      - name: Checkout lambda
-        uses: actions/checkout@v4
-        with:
-          repository: whatsopdahl/megadraft-lambdas
-          path: lambda
-          token: ${{ secrets.LAMBDA_REPO_PAT }}
-
-      - uses: pnpm/action-setup@v4
-        with:
-          package_json_file: lambda/package.json
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 24
-          cache: pnpm
-          cache-dependency-path: lambda/pnpm-lock.yaml
-
-      - name: Install lambda dependencies
-        working-directory: lambda
-        run: pnpm install --frozen-lockfile
-
-      - name: Build lambdas
-        working-directory: lambda
-        run: pnpm build
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -80,15 +49,9 @@ jobs:
           terraform_version: "1.15.8"
 
       - name: Terraform init
-        working-directory: infrastructure/envs/${{ steps.target.outputs.environment }}
+        working-directory: envs/${{ steps.target.outputs.environment }}
         run: terraform init
 
       - name: Terraform apply
-        working-directory: infrastructure/envs/${{ steps.target.outputs.environment }}
-        env:
-          # google_client_id is a public value (README: "safe to commit")
-          # but isn't in the committed prod.tfvars (dev.tfvars omits it
-          # entirely) - CI supplies it via a repo variable instead, which
-          # overrides the -var-file value.
-          TF_VAR_google_client_id: ${{ vars.GOOGLE_CLIENT_ID }}
+        working-directory: envs/${{ steps.target.outputs.environment }}
         run: terraform apply -auto-approve -var-file=${{ steps.target.outputs.environment }}.tfvars
