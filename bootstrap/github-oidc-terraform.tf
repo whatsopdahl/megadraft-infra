@@ -63,6 +63,10 @@ locals {
   iam_role_arn        = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/fantasy-draft-*"
   log_group_arn       = "arn:aws:logs:*:${data.aws_caller_identity.current.account_id}:log-group:/aws/lambda/fantasy-draft*"
   frontend_bucket_arn = "arn:aws:s3:::fantasy-draft-frontend-*-${data.aws_caller_identity.current.account_id}"
+  # ESPN credentials secret (megadraft-lambdas' modules/player-sync). Trailing
+  # "-*" covers both the -dev/-prod name suffix and the random 6-char suffix
+  # Secrets Manager appends to every secret's ARN.
+  espn_credentials_secret_arn = "arn:aws:secretsmanager:*:${data.aws_caller_identity.current.account_id}:secret:fantasy-draft/espn-credentials-*"
 }
 
 # --- terraform-apply -------------------------------------------------------

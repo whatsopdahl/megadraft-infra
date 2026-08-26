@@ -190,6 +190,18 @@ resource "aws_iam_role_policy" "github_actions_deploy" {
         Resource = "arn:aws:apigateway:*::/apis*"
       },
       {
+        # modules/player-sync creates the secret container only - no
+        # GetSecretValue/PutSecretValue, since Terraform never manages the
+        # actual espn_s2/SWID value (set manually, see that repo's README).
+        Sid    = "SecretsManagerManageEspnCredentials"
+        Effect = "Allow"
+        Action = [
+          "secretsmanager:CreateSecret", "secretsmanager:DeleteSecret", "secretsmanager:DescribeSecret",
+          "secretsmanager:TagResource", "secretsmanager:UntagResource",
+        ]
+        Resource = local.espn_credentials_secret_arn
+      },
+      {
         Sid      = "TerraformState"
         Effect   = "Allow"
         Action   = ["s3:GetObject", "s3:PutObject", "s3:DeleteObject"]
@@ -249,6 +261,12 @@ resource "aws_iam_role_policy" "github_actions_lambda_terraform_plan" {
           "apigateway:GET",
         ]
         Resource = "*"
+      },
+      {
+        Sid      = "SecretsManagerReadOnly"
+        Effect   = "Allow"
+        Action   = ["secretsmanager:DescribeSecret"]
+        Resource = local.espn_credentials_secret_arn
       },
       {
         Sid    = "S3ReadOnlyProjectBuckets"
