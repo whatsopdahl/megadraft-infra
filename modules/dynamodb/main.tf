@@ -46,19 +46,6 @@ resource "aws_dynamodb_table" "drafts" {
     name = "draftId"
     type = "S"
   }
-
-  attribute {
-    name = "name"
-    type = "S"
-  }
-
-  # Lets joinDraft resolve a human-typed draft name to its draftId - joiners
-  # don't know the draftId up front, only the name the commissioner shared.
-  global_secondary_index {
-    name            = "byName"
-    hash_key        = "name"
-    projection_type = "ALL"
-  }
 }
 
 # Master player reference pool, partitioned by sport league (NBA/NFL/MLB).
