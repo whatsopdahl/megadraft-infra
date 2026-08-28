@@ -149,6 +149,7 @@ resource "aws_iam_role_policy" "github_actions_deploy" {
           "lambda:TagResource", "lambda:UntagResource",
           "lambda:AddPermission", "lambda:RemovePermission",
           "lambda:PutFunctionConcurrency", "lambda:DeleteFunctionConcurrency",
+          "lambda:PutFunctionRecursionConfig",
         ]
         Resource = local.lambda_fn_arn
       },
